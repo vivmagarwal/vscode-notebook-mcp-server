@@ -8,10 +8,11 @@ from typing import Any, Dict, List, Optional
 from mcp.server.fastmcp import FastMCP
 from mcp.types import Tool
 
-from .exceptions import NotebookError, SecurityError, ValidationError, FileSystemError
+from .exceptions import NotebookError, SecurityError, ValidationError, FileSystemError, ExecutionError
 from .security import SecurityManager
 from .notebook_manager import NotebookManager
 from .cell_manager import CellManager
+from .execution_manager import ExecutionManager
 
 # Configure logging
 logging.basicConfig(
@@ -38,6 +39,7 @@ class VSCodeNotebookMCPServer:
         self.security_manager = SecurityManager(allowed_directories)
         self.notebook_manager = NotebookManager(self.security_manager)
         self.cell_manager = CellManager(self.notebook_manager)
+        self.execution_manager = ExecutionManager(self.notebook_manager)
         
         # Initialize MCP server
         @asynccontextmanager
@@ -46,6 +48,8 @@ class VSCodeNotebookMCPServer:
             logger.info(f"Allowed directories: {self.security_manager.list_allowed_directories()}")
             yield
             logger.info("VSCode Notebook MCP Server shutting down")
+            # Cleanup running kernels
+            self.execution_manager.cleanup()
         
         self.mcp = FastMCP(
             "vscode-notebook-mcp-server",
@@ -324,6 +328,136 @@ class VSCodeNotebookMCPServer:
             except Exception as e:
                 return self._handle_error(e)
         
+        # Execution operations
+        @self.mcp.tool()
+        def execute_cell(notebook_path: str, cell_index: int, 
+                        timeout: Optional[int] = None) -> Dict[str, Any]:
+            """Execute a specific cell in a notebook.
+            
+            Args:
+                notebook_path: Path to the notebook file
+                cell_index: Index of the cell to execute
+                timeout: Execution timeout in seconds (optional)
+                
+            Returns:
+                Dictionary with execution results and outputs
+            """
+            try:
+                result = self.execution_manager.execute_cell(notebook_path, cell_index, timeout)
+                return result
+            except Exception as e:
+                return self._handle_error(e)
+        
+        @self.mcp.tool()
+        def execute_all_cells(notebook_path: str, timeout: Optional[int] = None,
+                             stop_on_error: bool = False) -> Dict[str, Any]:
+            """Execute all cells in a notebook sequentially.
+            
+            Args:
+                notebook_path: Path to the notebook file
+                timeout: Execution timeout per cell in seconds (optional)
+                stop_on_error: Whether to stop execution on first error (optional)
+                
+            Returns:
+                Dictionary with execution results for all cells
+            """
+            try:
+                result = self.execution_manager.execute_all_cells(notebook_path, timeout, stop_on_error)
+                return result
+            except Exception as e:
+                return self._handle_error(e)
+        
+        @self.mcp.tool()
+        def execute_cells_range(notebook_path: str, start_index: int, end_index: int,
+                               timeout: Optional[int] = None,
+                               stop_on_error: bool = False) -> Dict[str, Any]:
+            """Execute a range of cells in a notebook.
+            
+            Args:
+                notebook_path: Path to the notebook file
+                start_index: Starting cell index (inclusive)
+                end_index: Ending cell index (inclusive)
+                timeout: Execution timeout per cell in seconds (optional)
+                stop_on_error: Whether to stop execution on first error (optional)
+                
+            Returns:
+                Dictionary with execution results for the specified range
+            """
+            try:
+                result = self.execution_manager.execute_cells_range(
+                    notebook_path, start_index, end_index, timeout, stop_on_error
+                )
+                return result
+            except Exception as e:
+                return self._handle_error(e)
+        
+        @self.mcp.tool()
+        def execute_code_snippet(notebook_path: str, code: str,
+                                timeout: Optional[int] = None) -> Dict[str, Any]:
+            """Execute arbitrary code without modifying the notebook.
+            
+            Args:
+                notebook_path: Path to notebook (to determine kernel context)
+                code: Code to execute
+                timeout: Execution timeout in seconds (optional)
+                
+            Returns:
+                Dictionary with execution results
+            """
+            try:
+                result = self.execution_manager.execute_code_snippet(notebook_path, code, timeout)
+                return result
+            except Exception as e:
+                return self._handle_error(e)
+        
+        @self.mcp.tool()
+        def restart_kernel(notebook_path: str) -> Dict[str, Any]:
+            """Restart the kernel for a notebook.
+            
+            Args:
+                notebook_path: Path to the notebook file
+                
+            Returns:
+                Dictionary with operation status
+            """
+            try:
+                result = self.execution_manager.restart_kernel(notebook_path)
+                return result
+            except Exception as e:
+                return self._handle_error(e)
+        
+        @self.mcp.tool()
+        def get_kernel_status(notebook_path: str) -> Dict[str, Any]:
+            """Get the status of a notebook's kernel.
+            
+            Args:
+                notebook_path: Path to the notebook file
+                
+            Returns:
+                Dictionary with kernel status information
+            """
+            try:
+                result = self.execution_manager.get_kernel_status(notebook_path)
+                return result
+            except Exception as e:
+                return self._handle_error(e)
+        
+        @self.mcp.tool()
+        def interrupt_kernel(notebook_path: str) -> Dict[str, Any]:
+            """Interrupt a running kernel.
+            
+            Args:
+                notebook_path: Path to the notebook file
+                
+            Returns:
+                Dictionary with operation status
+            """
+            try:
+                result = self.execution_manager.interrupt_kernel(notebook_path)
+                return result
+            except Exception as e:
+                return self._handle_error(e)
+        
         # Utility functions
         @self.mcp.tool()
         def list_allowed_directories() -> Dict[str, Any]:
@@ -382,6 +516,10 @@ class VSCodeNotebookMCPServer:
                     "Notebook management (create, read, list, export)",
                     "Cell operations (add, modify, delete, move, duplicate)",
                     "Search and replace across cells",
+                    "Cell execution (execute individual cells, all cells, ranges)",
+                    "Code snippet execution (without modifying notebook)",
+                    "Kernel management (start, restart, interrupt, status)",
+                    "Live output capture (text, errors, display data)",
                     "Security-first design with path validation",
                     "Automatic backup creation",
                     "Comprehensive error handling"
@@ -430,6 +568,13 @@ class VSCodeNotebookMCPServer:
                 "success": False,
                 "error_type": "FileSystemError",
                 "error": "File system operation failed",
+                "details": error_message
+            }
+        elif isinstance(error, ExecutionError):
+            return {
+                "success": False,
+                "error_type": "ExecutionError",
+                "error": "Code execution failed",
                 "details": error_message
             }
         else:

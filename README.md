@@ -160,14 +160,44 @@ Move a cell to a different position.
 
 ### ⚡ Execution Operations
 
-#### `execute_cell(notebook_path: str, index: int, kernel_spec: str = "python3", timeout: int = 30) -> Dict[str, Any]`
-Execute a single code cell and capture outputs.
+#### `execute_cell(notebook_path: str, cell_index: int, timeout: Optional[int] = None) -> Dict[str, Any]`
+Execute a single code cell and capture outputs in real-time.
 
-#### `execute_notebook(notebook_path: str, kernel_spec: str = "python3", timeout: int = 300) -> Dict[str, Any]`
-Execute all code cells in the notebook sequentially.
+```python
+# Example response
+{
+  "success": true,
+  "cell_index": 0,
+  "execution_count": 1,
+  "execution_time": 0.125,
+  "outputs": [
+    {
+      "output_type": "stream",
+      "name": "stdout", 
+      "text": "Result: 15\n"
+    }
+  ],
+  "message": "Successfully executed cell 0"
+}
+```
 
-#### `execute_cells_range(notebook_path: str, start: int, end: int, kernel_spec: str = "python3") -> Dict[str, Any]`
-Execute a range of cells.
+#### `execute_all_cells(notebook_path: str, timeout: Optional[int] = None, stop_on_error: bool = False) -> Dict[str, Any]`
+Execute all code cells in the notebook sequentially with comprehensive error handling.
+
+#### `execute_cells_range(notebook_path: str, start_index: int, end_index: int, timeout: Optional[int] = None, stop_on_error: bool = False) -> Dict[str, Any]`
+Execute a specific range of cells (inclusive indices).
+
+#### `execute_code_snippet(notebook_path: str, code: str, timeout: Optional[int] = None) -> Dict[str, Any]`
+Execute arbitrary code without modifying the notebook file.
+
+#### `restart_kernel(notebook_path: str) -> Dict[str, Any]`
+Restart the Jupyter kernel for a notebook.
+
+#### `get_kernel_status(notebook_path: str) -> Dict[str, Any]`
+Get the current status of a notebook's kernel.
+
+#### `interrupt_kernel(notebook_path: str) -> Dict[str, Any]`
+Interrupt a running kernel execution.
 
 ### 🔍 Analysis Operations
 
