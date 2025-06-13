@@ -58,24 +58,49 @@ class SecurityManager:
         if not path or str(path).strip() == "":
             raise SecurityError("Empty path not allowed")
         
-        try:
-            # Convert to Path and resolve to absolute path
-            resolved_path = Path(path).resolve()
-        except (OSError, ValueError) as e:
-            raise SecurityError(f"Invalid path: {e}", str(path))
+        path_obj = Path(path)
         
-        # Check if path is within any allowed directory
+        # If path is absolute, validate it directly
+        if path_obj.is_absolute():
+            try:
+                resolved_path = path_obj.resolve()
+            except (OSError, ValueError) as e:
+                raise SecurityError(f"Invalid path: {e}", str(path))
+            
+            # Check if absolute path is within any allowed directory
+            for allowed_dir in self.allowed_directories:
+                try:
+                    resolved_path.relative_to(allowed_dir)
+                    logger.debug(f"Absolute path {resolved_path} validated against {allowed_dir}")
+                    return resolved_path
+                except ValueError:
+                    continue
+            
+            raise SecurityError(
+                f"Absolute path not within allowed directories",
+                str(resolved_path)
+            )
+        
+        # For relative paths, try resolving relative to each allowed directory
         for allowed_dir in self.allowed_directories:
             try:
-                resolved_path.relative_to(allowed_dir)
-                logger.debug(f"Path {resolved_path} validated against {allowed_dir}")
-                return resolved_path
-            except ValueError:
+                # Try to resolve the path relative to this allowed directory
+                candidate_path = (allowed_dir / path_obj).resolve()
+                
+                # Ensure the resolved path is still within the allowed directory
+                # (protects against path traversal attacks like ../../../etc/passwd)
+                candidate_path.relative_to(allowed_dir)
+                
+                logger.debug(f"Relative path {path} resolved to {candidate_path} using base {allowed_dir}")
+                return candidate_path
+            except (OSError, ValueError):
+                # This allowed directory doesn't work, try the next one
                 continue
         
+        # If we get here, the path couldn't be resolved relative to any allowed directory
         raise SecurityError(
-            f"Path not within allowed directories",
-            str(resolved_path)
+            f"Relative path could not be resolved within any allowed directories: {list(self.allowed_directories)}",
+            str(path)
         )
     
     def validate_notebook_path(self, path: Union[str, Path]) -> Path:

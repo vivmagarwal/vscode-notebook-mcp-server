@@ -100,11 +100,16 @@ class NotebookManager:
                 "mkdir"
             )
         
-        # Validate notebook before saving
+        # Validate notebook before saving (with lenient validation for newer notebook formats)
         try:
             nbformat.validate(notebook)
         except ValidationError as e:
-            raise CustomValidationError(f"Notebook validation failed: {e}")
+            # Allow validation to pass if the only issue is unexpected 'id' fields in cells
+            error_str = str(e)
+            if "'id' was unexpected" in error_str:
+                logger.debug(f"Ignoring validation warning about 'id' fields: {e}")
+            else:
+                raise CustomValidationError(f"Notebook validation failed: {e}")
         
         # Save notebook
         try:
